@@ -4,12 +4,15 @@ import google.generativeai as genai
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+import google.generativeai as genai
+from contextlib import asynccontextmanager
 
 load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 
-app = FastAPI()
+
+
 
 html="""
 <!DOCTYPE html>
@@ -46,6 +49,14 @@ html="""
 """
 
 
+genai.configure(api_key="AIzaSyDS7EqjsqDbitDOgi5aueKHG0rDjxrouR8")
+model = genai.GenerativeModel("tunedModels/diabetes-2024-11-16")
+chat_session = model.start_chat(
+    history=[]
+)
+
+app = FastAPI()
+
 @app.get("/")
 def read_root():
     return HTMLResponse(html)
@@ -55,4 +66,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     while True:
         data = await websocket.receive_text()
-        await websocket.send_text(f"Message sent was {data}")
+        await websocket.send_text(f"Message sent was:{data}")
+        response = chat_session.send_message(data)
+        await websocket.send_text(f"Message sent was:{response.text}")
