@@ -5,7 +5,29 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import google.generativeai as genai
+
+
+from motor.motor_asyncio import AsyncIOMotorClient  
 from contextlib import asynccontextmanager
+
+
+async def startup_db_client(app):
+    app.mongodb_client = AsyncIOMotorClient(os.environ["MONGO_DB"])
+    app.mongodb = app.mongodb_client.get_database("chat")
+    print("MongoDB connected.")
+
+# method to close the database connection
+async def shutdown_db_client(app):
+    app.mongodb_client.close()
+    print("Database disconnected.")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # start the database connection
+    await startup_db_client(app)
+    yield
+    await shutdown_db_client(app)
+
 
 load_dotenv()
 
@@ -55,7 +77,7 @@ chat_session = model.start_chat(
     history=[]
 )
 
-app = FastAPI()
+app = FastAPI(lifespan= lifespan)
 
 @app.get("/")
 def read_root():
@@ -69,3 +91,11 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_text(f"Message sent was:{data}")
         response = chat_session.send_message(data)
         await websocket.send_text(f"Message sent was:{response.text}")
+
+
+from .models import Message
+@app.post("/create_chat", response_model=Message)
+async def insert_message(message: Message):
+    result = await app.mongodb["chats"].insert_one(message.model_dump())
+    inserted_message = await app.mongodb["chats"].find_one({"_id":result.inserted_id})
+    return inserted_message
