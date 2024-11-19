@@ -51,7 +51,7 @@ html="""
         <ul id='messages'>
         </ul>
         <script>
-            var ws = new WebSocket("ws://localhost:8000/ws");
+            var ws = new WebSocket(`ws://localhost:8000/ws/1`);
             ws.onmessage = function(event) {
                 var messages = document.getElementById('messages')
                 var message = document.createElement('li')
@@ -83,14 +83,49 @@ app = FastAPI(lifespan= lifespan)
 def read_root():
     return HTMLResponse(html)
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    while True:
-        data = await websocket.receive_text()
-        await websocket.send_text(f"Message sent was:{data}")
-        response = chat_session.send_message(data)
-        await websocket.send_text(f"Message sent was:{response.text}")
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+
+manager = ConnectionManager()
+
+from  .models import History, Role
+import datetime
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: int):
+    message_history = []
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await manager.send_personal_message(f"Message Sent was: {data}", websocket)
+            message_history.append({"text":data, "role": "User"})
+            result = await chat_session.send_message_async(data)
+            message_history.append(Message(result.text))
+            await manager.broadcast(f"{client_id} said {result.text} ")
+            print(message_history)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket) 
+        result = await app.mongodb["history"].insert_one({"history":message_history, "created_at": datetime.datetime.now()})
+        await manager.broadcast(f"Connections Closed")
 
 
 from .models import Message

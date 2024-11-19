@@ -12,6 +12,8 @@ class Message(BaseModel):
     text: str
     role: Role
 
+
 class History(BaseModel):
-    created:datetime = datetime.now() 
+    created_at:datetime = datetime.now() 
+    updated_at: datetime = datetime.now()
     history: List[Message]
