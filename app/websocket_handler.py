@@ -2,6 +2,7 @@ from fastapi import WebSocket, WebSocketException, WebSocketDisconnect
 from app.db import mongodb
 from app.gemini_handler import generate_response, history
 from datetime import datetime
+from typing import List
 
 connected_clients = {}
 
